@@ -1,0 +1,122 @@
+# Aleandro Andrea
+# aaah1976@gmail.com
+# 08/2017
+
+import subprocess
+import getpass
+import telnetlib
+import time
+import io
+import sys
+import paramiko
+
+def calltelnet(host,ius,ipass):
+    #make the connection using telnet port 23
+    #returns a tuple as follow
+    #[0] 1  for successful connection and login
+    #[0] -1 for no connection and NO login
+    #[0] 3  for successful connection and NO login
+    #[1] [user mode] for user mode
+    #[1] [privilige mode] for Privilige mode
+    userm=''
+    try:
+        tn=telnetlib.Telnet(host)
+    except:
+        return [-1,'Telnet Connection Refused']
+    line1=rlve(tn)
+    if(line1[0].find('Username:')>0):
+        tn.write(bytes(ius, 'utf-8')+b'\r')
+        line1=rlve(tn)
+    if(line1[0].find('Password:')>0):
+        tn.write(bytes(ipass, 'utf-8')+b'\r')
+        line1=rlve(tn)
+    if(line1[1]=='>' or line1[1]=='#'):
+        if(line1[1]=='>'):userm='Telnet User Mode'
+        if(line1[1]=='#'):userm='Telnet Privilege Mode'
+        return [1,userm,tn]
+    return [3,'Telnet Connection. Failed Authentication']
+
+def callssh(host,ius,ipass):
+    #make the connection using SSH port 22
+    #returns a tuple as follow
+    #[0] 1  for successful connection and login
+    #[0] -1 for no connection 
+    #[0] 3  for successful connection and NO login
+    #[1] [user mode] for user mode
+    #[1] [privilige mode] for Privilige mode
+    ssh=paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(host,port=22,username=ius,password=ipass)
+    except paramiko.ssh_exception.AuthenticationException:
+        return [3,'SSH Connection. Failed Authentication']    
+    except:
+        return [-1,'SSH Host does not respond']
+    channel = ssh.invoke_shell()
+    chda= str()
+    host=str()
+    srcfile=str()
+    while True:
+        if(channel.recv_ready()):
+            chda=str(channel.recv(9999))
+        else:
+            continue
+        chda=str(chda)
+        if(chda.find('>')>0):
+            return [1,'SSH User Mode']
+        elif(chda.find('#')>0 and chda.find(')#')<0):
+             return [1,'SSH Privilege Mode']    
+             break
+
+def rlve(conn):   #read lines very-aeger
+    time.sleep(2)
+    rl=conn.read_very_eager()
+    lc=rl[len(rl)-1:].decode("utf-8")
+    return(str(rl),str(lc))  #returns a tuple with line and last character
+
+def wlf(fname,fline):  #open a file as append and add a line
+    f = open(fname, 'a+')
+    f.write(fline+'\n')
+    f.close()
+
+
+DETACHED_PROCESS = 0x00000008 #to avoid to open a child windows
+# will try to connect to hosts 192.168.254.1 to .10 using all possibles combinations of users and passwords
+host = ''
+fname='password.txt'
+network='192.168.254.'
+lohost=1
+hihost=10
+
+#tuple for possibles users
+usert=['user1','user2','user4']  
+#tuple for possibles passwords
+passt=['pass1','pass2','pass4','pass5'] 
+
+for ip in range(lohost,hihost+1):
+    swc=[1,'']
+    swc1=[1,'']
+    host = network+str(ip)
+    print('Working on:',host,' ',end='')
+    for ius in usert:
+        for ipass in passt:
+            if (swc[0]>0):
+                swc=calltelnet(host,ius,ipass)
+                print('T',end='')
+            if (swc1[0]>0):
+                swc1=callssh(host,ius,ipass)
+                print('s',end='')
+            if(swc[0]<3 and swc1[0]<3):break
+        if(swc[0]<3 and swc1[0]<3):break
+    print()
+    if(swc[0]==1):
+        print('telnet Host:',host,'Logged in','User:',ius,'Pass: *****',swc[1])
+        wlf(fname,host+','+ius+','+ipass+',Telnet')
+    if(swc1[0]==1):
+        print('ssh    Host:',host,'Logged in','User:',ius,'Pass: *****',swc1[1])
+        wlf(fname,host+','+ius+','+ipass+',SSH')
+    if(swc[0]>1 and swc1[0]>1 ):
+        print('      Host:',host,swc[1],swc1[1])
+        wlf(fname,host+',,,'+'Telnet:'+swc[1]+','+' SSH:'+swc1[1])
+
+# saves results on a file named as 'fname' variable, saves host, user and password found.
